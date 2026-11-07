@@ -70,6 +70,7 @@
   },
   "panels": {
     "liveNews": "Live News",
+    "shtfGauge": "SHTF Gauge",
     "markets": "Markets",
     "map": "Global Situation",
     "techMap": "Global Tech",
@@ -663,7 +664,8 @@
         "financialCenters": "Financial Centers",
         "centralBanks": "Central Banks",
         "commodityHubs": "Commodity Hubs",
-        "gulfInvestments": "GCC Investments"
+        "gulfInvestments": "GCC Investments",
+        "shtf": "SHTF Heat Map"
       },
       "tooltip": {
         "earthquake": "Earthquake",

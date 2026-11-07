@@ -554,6 +554,8 @@ export interface MapLayers {
   commodityHubs: boolean;
   // Gulf FDI layers
   gulfInvestments: boolean;
+  // SHTF gauge choropleth (relative-risk temperature per country)
+  shtf: boolean;
 }
 
 export interface AIDataCenter {

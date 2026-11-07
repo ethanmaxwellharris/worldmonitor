@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'path';
 import pkg from './package.json';
@@ -90,6 +90,26 @@ const VARIANT_META: Record<string, {
       'Market radar signals',
     ],
   },
+  local: {
+    title: 'Local Monitor - Real-Time Neighborhood Situation Dashboard',
+    description: 'Hyper-local situation dashboard: aircraft and satellites overhead, NWS alerts and forecast, nearby earthquakes, local news and events.',
+    keywords: 'local monitor, aircraft overhead, satellites overhead, ISS pass, weather alerts, earthquakes near me, local news, local events, situational awareness',
+    url: 'https://worldmonitor.app/',
+    siteName: 'Local Monitor',
+    shortName: 'LocalMonitor',
+    subject: 'Hyper-Local Situation Awareness',
+    classification: 'Local Dashboard, Sky Tracker, Situational Awareness',
+    categories: ['news', 'weather'],
+    features: [
+      'Aircraft overhead (ADS-B)',
+      'Satellites overhead and ISS passes',
+      'NWS alerts and forecast',
+      'Nearby earthquakes',
+      'Local news',
+      'Local events',
+      'Scanner link-outs',
+    ],
+  },
 };
 
 const activeVariant = process.env.VITE_VARIANT || 'full';
@@ -160,6 +180,49 @@ function youtubeLivePlugin(): Plugin {
   };
 }
 
+/**
+ * Dev-only: serve the Local Monitor + SHTF gauge edge handlers (api/local/*.js, api/shtf/*.js) from the
+ * Vite dev server so `npm run dev:local` works without `vercel dev`.
+ * Server-side env (LOCAL_LAT, LOCAL_LON, TICKETMASTER_API_KEY, ...) is read
+ * from the shell or .env / .env.local; none of it is exposed to the client.
+ */
+function localApiDevPlugin(): Plugin {
+  return {
+    name: 'local-api-dev',
+    configureServer(server) {
+      const fileEnv = loadEnv(server.config.mode, process.cwd(), '');
+      for (const [k, v] of Object.entries(fileEnv)) {
+        if (process.env[k] === undefined && !k.startsWith('VITE_')) process.env[k] = v;
+      }
+      server.middlewares.use(async (req, res, next) => {
+        const match = req.url?.match(/^\/api\/(local|shtf)\/([a-z-]+)(?:\?|$)/);
+        if (!match) return next();
+        try {
+          const mod = await server.ssrLoadModule(`/api/${match[1]}/${match[2]}.js`);
+          const headers = new Headers();
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (typeof v === 'string') headers.set(k, v);
+          }
+          const request = new Request(`http://${req.headers.host || 'localhost'}${req.url}`, {
+            method: req.method,
+            headers,
+          });
+          const response: Response = await mod.default(request);
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          res.end(Buffer.from(await response.arrayBuffer()));
+        } catch (error) {
+          if (String((error as Error)?.message || '').includes('Failed to load url')) return next();
+          console.error('[local-api-dev]', error);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Local API handler failed' }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -167,6 +230,7 @@ export default defineConfig({
   plugins: [
     htmlVariantPlugin(),
     youtubeLivePlugin(),
+    localApiDevPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,

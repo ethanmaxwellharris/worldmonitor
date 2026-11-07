@@ -1,12 +1,12 @@
 import { getCachedJson, setCachedJson, mget, hashString } from './_upstash-cache.js';
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { GROQ_API_URL, getGroqModel, groqChatParams } from './_groq.js';
 
 export const config = {
   runtime: 'edge',
 };
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+const MODEL = getGroqModel();
 const CACHE_TTL_SECONDS = 86400;
 const CACHE_VERSION = 'v1';
 const MAX_BATCH_SIZE = 20;
@@ -124,7 +124,7 @@ Return a JSON array with one object per headline in order: [{"level":"...","cate
           { role: 'user', content: numberedList },
         ],
         temperature: 0,
-        max_tokens: uncachedTitles.length * 60,
+        ...groqChatParams(MODEL, uncachedTitles.length * 60),
       }),
     });
 
