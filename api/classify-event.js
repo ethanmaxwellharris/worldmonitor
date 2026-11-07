@@ -1,12 +1,12 @@
 import { getCachedJson, setCachedJson, hashString } from './_upstash-cache.js';
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { GROQ_API_URL, getGroqModel, groqChatParams } from './_groq.js';
 
 export const config = {
   runtime: 'edge',
 };
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+const MODEL = getGroqModel();
 const CACHE_TTL_SECONDS = 86400;
 const CACHE_VERSION = 'v1';
 
@@ -97,7 +97,7 @@ Return: {"level":"...","category":"..."}`;
           { role: 'user', content: title },
         ],
         temperature: 0,
-        max_tokens: 50,
+        ...groqChatParams(MODEL, 50),
       }),
     });
 
@@ -122,6 +122,13 @@ Return: {"level":"...","category":"..."}`;
     try {
       parsed = JSON.parse(raw);
     } catch {
+      // Reasoning models sometimes wrap JSON in prose or code fences.
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { parsed = JSON.parse(match[0]); } catch { /* fall through */ }
+      }
+    }
+    if (!parsed || typeof parsed !== 'object') {
       console.warn('[Classify] Invalid JSON from LLM:', raw);
       return new Response(JSON.stringify({ fallback: true }), {
         status: 500,

@@ -991,7 +991,7 @@ The `.env.example` file documents every variable with descriptions and registrat
 
 | Group             | Variables                                                                  | Free Tier                                  |
 | ----------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
-| **AI**            | `GROQ_API_KEY`, `OPENROUTER_API_KEY`                                       | 14,400 req/day (Groq), 50/day (OpenRouter) |
+| **AI**            | `GROQ_API_KEY`, `OPENROUTER_API_KEY`                                       | ~1K req/day (Groq gpt-oss-20b free plan), 50/day (OpenRouter) |
 | **Cache**         | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`                       | 10K commands/day                           |
 | **Markets**       | `FINNHUB_API_KEY`, `FRED_API_KEY`, `EIA_API_KEY`                           | All free tier                              |
 | **Tracking**      | `WINGBITS_API_KEY`, `AISSTREAM_API_KEY`                                    | Free                                       |
@@ -1094,6 +1094,7 @@ Contributions welcome! See [CONTRIBUTING](./docs/DOCUMENTATION.md#contributing) 
 npm run dev          # Full variant (worldmonitor.app)
 npm run dev:tech     # Tech variant (tech.worldmonitor.app)
 npm run dev:finance  # Finance variant (finance.worldmonitor.app)
+npm run dev:local    # Local Monitor variant (home area; see docs/LOCAL_MONITOR.md)
 
 # Production builds
 npm run build:full      # Build full variant

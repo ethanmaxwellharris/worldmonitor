@@ -1,11 +1,11 @@
 /**
  * Groq API Summarization Endpoint with Redis Caching
- * Uses Llama 3.1 8B Instant for high-throughput summarization
- * Free tier: 14,400 requests/day (14x more than 70B model)
+ * Model: GROQ_MODEL env override, default openai/gpt-oss-20b (see _groq.js)
  * Server-side Redis cache for cross-user deduplication
  */
 
 import { createSummarizeHandler } from './_summarize-handler.js';
+import { GROQ_API_URL, getGroqModel, groqChatParams } from './_groq.js';
 
 export const config = {
   runtime: 'edge',
@@ -18,9 +18,14 @@ export default createSummarizeHandler({
   getCredentials() {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return null;
+    const model = getGroqModel();
+    // max_tokens: undefined drops the shared handler's max_tokens when the
+    // model uses max_completion_tokens instead (JSON.stringify skips undefined).
+    const extraBody = { max_tokens: undefined, ...groqChatParams(model, 150) };
     return {
-      apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.1-8b-instant',
+      apiUrl: GROQ_API_URL,
+      model,
+      extraBody,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',

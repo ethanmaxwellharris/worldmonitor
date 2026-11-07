@@ -104,6 +104,18 @@ import { getCountryAtCoordinates, hasCountryGeometry, isCoordinateInCountry, pre
 import { initI18n, t, changeLanguage } from '@/services/i18n';
 
 import type { PredictionMarket, MarketData, ClusteredEvent } from '@/types';
+import {
+  LocalOverheadPanel,
+  LocalSkyPanel,
+  LocalWeatherPanel,
+  LocalQuakesPanel,
+  LocalNewsPanel,
+  LocalEventsPanel,
+  LocalScannersPanel,
+  ShtfGaugePanel,
+} from '@/components/LocalMonitorPanels';
+import { fetchLocalConfig } from '@/services/local-monitor';
+import { fetchShtfGlobal } from '@/services/shtf';
 
 type IntlDisplayNamesCtor = new (
   locales: string | string[],
@@ -802,6 +814,7 @@ export class App {
     });
 
     this.map.onCountryClicked(async (countryClick) => {
+      if (countryClick.code) (this.panels['shtf-gauge'] as ShtfGaugePanel | undefined)?.select?.(countryClick.code);
       if (countryClick.code && countryClick.name) {
         this.openCountryBriefByCode(countryClick.code, countryClick.name);
       } else {
@@ -2321,6 +2334,19 @@ export class App {
     const insightsPanel = new InsightsPanel();
     this.panels['insights'] = insightsPanel;
 
+    // Local Monitor variant panels (home-area dashboard)
+    if (SITE_VARIANT === 'local') {
+      this.createLocalPanels();
+    }
+
+    // SHTF gauge (world mode) for the geopolitical variant; local mode is created in createLocalPanels().
+    if (SITE_VARIANT === 'full') {
+      const shtf = new ShtfGaugePanel('global');
+      this.panels['shtf-gauge'] = shtf;
+      this.wireShtfPanel(shtf);
+      shtf.start();
+    }
+
     // Add panels to grid in saved order
     // Use DEFAULT_PANELS keys for variant-aware panel order
     const defaultOrder = Object.keys(DEFAULT_PANELS).filter(k => k !== 'map');
@@ -2386,6 +2412,58 @@ export class App {
     this.applyPanelSettings();
     this.applyInitialUrlState();
 
+  }
+
+  private createLocalPanels(): void {
+    const scanners = new LocalScannersPanel();
+    const overhead = new LocalOverheadPanel();
+    const sky = new LocalSkyPanel();
+    const weather = new LocalWeatherPanel((data) => scanners.setWeather(data));
+    const quakes = new LocalQuakesPanel();
+    const news = new LocalNewsPanel();
+    const events = new LocalEventsPanel();
+    const shtf = new ShtfGaugePanel('local');
+
+    this.panels['local-overhead'] = overhead;
+    this.panels['local-sky'] = sky;
+    this.panels['local-weather'] = weather;
+    this.panels['local-quakes'] = quakes;
+    this.panels['local-news'] = news;
+    this.panels['local-events'] = events;
+    this.panels['local-scanners'] = scanners;
+    this.panels['shtf-gauge'] = shtf;
+
+    [overhead, sky, weather, quakes, news, events].forEach((panel) => panel.start());
+    this.wireShtfPanel(shtf);
+    shtf.start();
+
+    // Center the map on the server-provided rounded (~11 km) home center.
+    void fetchLocalConfig().then((cfg) => {
+      scanners.setConfig(cfg);
+      // Keep a deliberate zoomed-in deep link (?lat=&lon=&zoom>2); otherwise go home.
+      const url = this.initialUrlState;
+      const hasDeepLink = url?.lat !== undefined && url?.lon !== undefined && (url?.zoom ?? 0) > 2;
+      if (cfg.configured && cfg.center && !hasDeepLink) {
+        this.map?.setCenter(cfg.center.lat, cfg.center.lon, 8);
+      }
+    });
+  }
+
+  private wireShtfPanel(panel: ShtfGaugePanel): void {
+    panel.setOnShowHeatmap(() => {
+      this.map?.enableLayer('shtf');
+      void this.loadShtfHeat();
+    });
+    panel.setOnCountrySelect((c) => {
+      if (c.iso2) this.map?.highlightCountry(c.iso2);
+    });
+  }
+
+  /** Feed the SHTF choropleth from the (deduped, cached) global gauge. */
+  private async loadShtfHeat(): Promise<void> {
+    const gauge = await fetchShtfGlobal();
+    this.map?.setShtfHeat(gauge.countries);
+    this.map?.setLayerReady('shtf', gauge.countries.length > 0);
   }
 
   private applyInitialUrlState(): void {
@@ -3053,6 +3131,17 @@ export class App {
       }
     };
 
+    // Local variant: panels poll /api/local/* themselves; only feed the map layers here.
+    if (SITE_VARIANT === 'local') {
+      const localTasks: Promise<void>[] = [];
+      if (this.mapLayers.natural) localTasks.push(runGuarded('natural', () => this.loadNatural()));
+      if (this.mapLayers.weather) localTasks.push(runGuarded('weather', () => this.loadWeatherAlerts()));
+      if (this.mapLayers.shtf) localTasks.push(runGuarded('shtf', () => this.loadShtfHeat()));
+      await Promise.allSettled(localTasks);
+      this.updateSearchIndex();
+      return;
+    }
+
     const tasks: Array<{ name: string; task: Promise<void> }> = [
       { name: 'news', task: runGuarded('news', () => this.loadNews()) },
       { name: 'markets', task: runGuarded('markets', () => this.loadMarkets()) },
@@ -3073,6 +3162,7 @@ export class App {
     // NOTE: outages, protests, military are handled by loadIntelligenceSignals() above
     // They update the map when layers are enabled, so no duplicate tasks needed here
     if (SITE_VARIANT === 'full') tasks.push({ name: 'firms', task: runGuarded('firms', () => this.loadFirmsData()) });
+    if (this.mapLayers.shtf) tasks.push({ name: 'shtf', task: runGuarded('shtf', () => this.loadShtfHeat()) });
     if (this.mapLayers.natural) tasks.push({ name: 'natural', task: runGuarded('natural', () => this.loadNatural()) });
     if (this.mapLayers.weather) tasks.push({ name: 'weather', task: runGuarded('weather', () => this.loadWeatherAlerts()) });
     if (this.mapLayers.ais) tasks.push({ name: 'ais', task: runGuarded('ais', () => this.loadAisSignals()) });
@@ -3106,6 +3196,9 @@ export class App {
     this.map?.setLayerLoading(layer, true);
     try {
       switch (layer) {
+        case 'shtf':
+          await this.loadShtfHeat();
+          break;
         case 'natural':
           await this.loadNatural();
           break;
@@ -4451,6 +4544,14 @@ export class App {
   }
 
   private setupRefreshIntervals(): void {
+    if (SITE_VARIANT === 'local') {
+      this.scheduleRefresh('natural', () => this.loadNatural(), 5 * 60 * 1000, () => this.mapLayers.natural);
+      this.scheduleRefresh('weather', () => this.loadWeatherAlerts(), 10 * 60 * 1000, () => this.mapLayers.weather);
+      this.scheduleRefresh('shtf', () => this.loadShtfHeat(), 15 * 60 * 1000, () => this.mapLayers.shtf);
+      return;
+    }
+    this.scheduleRefresh('shtf', () => this.loadShtfHeat(), 15 * 60 * 1000, () => this.mapLayers.shtf);
+
     // Always refresh news, markets, predictions, pizzint
     this.scheduleRefresh('news', () => this.loadNews(), REFRESH_INTERVALS.feeds);
     this.scheduleRefresh('markets', () => this.loadMarkets(), REFRESH_INTERVALS.markets);
