@@ -385,6 +385,7 @@ export class MapComponent {
       centralBanks: 'components.deckgl.layers.centralBanks',
       commodityHubs: 'components.deckgl.layers.commodityHubs',
       gulfInvestments: 'components.deckgl.layers.gulfInvestments',
+      shtf: 'components.deckgl.layers.shtf',
     };
     const getLayerLabel = (layer: keyof MapLayers): string => {
       if (layer === 'sanctions') return t('components.deckgl.layerHelp.labels.sanctions');

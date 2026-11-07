@@ -2,6 +2,7 @@
  * MapContainer - Conditional map renderer
  * Renders DeckGLMap (WebGL) on desktop, fallback to D3/SVG MapComponent on mobile
  */
+import type { ShtfCountry } from '@/services/shtf';
 import { isMobileDevice } from '@/utils';
 import { MapComponent } from './Map';
 import { DeckGLMap, type DeckMapView, type CountryClickPayload } from './DeckGLMap';
@@ -287,6 +288,13 @@ export class MapContainer {
   public setClimateAnomalies(anomalies: ClimateAnomaly[]): void {
     if (this.useDeckGL) {
       this.deckGLMap?.setClimateAnomalies(anomalies);
+    }
+  }
+
+  /** SHTF gauge choropleth (DeckGL map only; the SVG/mobile map has no country fills). */
+  public setShtfHeat(countries: ShtfCountry[]): void {
+    if (this.useDeckGL) {
+      this.deckGLMap?.setShtfHeat(countries);
     }
   }
 

@@ -6,13 +6,13 @@
 
 import { getCachedJson, setCachedJson, hashString } from './_upstash-cache.js';
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { GROQ_API_URL, getGroqModel, groqChatParams } from './_groq.js';
 
 export const config = {
   runtime: 'edge',
 };
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+const MODEL = getGroqModel();
 const CACHE_TTL_SECONDS = 7200; // 2 hours
 const CACHE_VERSION = 'ci-v2';
 
@@ -149,7 +149,7 @@ Rules:
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.4,
-        max_tokens: 900,
+        ...groqChatParams(MODEL, 900),
       }),
     });
 

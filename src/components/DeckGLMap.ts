@@ -82,6 +82,7 @@ import {
 import { getCountryScore } from '@/services/country-instability';
 import { getAlertsNearLocation } from '@/services/geo-convergence';
 import { getCountriesGeoJson, getCountryAtCoordinates } from '@/services/country-geometry';
+import { shtfColor, SHTF_LEVEL_LABEL, SHTF_WIDE_BAND, type ShtfCountry } from '@/services/shtf';
 
 export type TimeRange = '1h' | '6h' | '24h' | '48h' | '7d' | 'all';
 export type DeckMapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania';
@@ -264,6 +265,14 @@ export class DeckGLMap {
   private ucdpEvents: UcdpGeoEvent[] = [];
   private displacementFlows: DisplacementFlow[] = [];
   private climateAnomalies: ClimateAnomaly[] = [];
+
+  // SHTF gauge choropleth (maplibre fill under deck.gl layers)
+  private shtfCountries: ShtfCountry[] = [];
+  private shtfByIso3 = new Map<string, ShtfCountry>();
+  private shtfPaintDirty = false;
+  private shtfHoverSetup = false;
+  private shtfTooltipEl: HTMLDivElement | null = null;
+  private shtfLegendEl: HTMLDivElement | null = null;
 
   // Country highlight state
   private countryGeoJsonLoaded = false;
@@ -2759,6 +2768,7 @@ export class DeckGLMap {
           { key: 'cyberThreats', label: t('components.deckgl.layers.cyberThreats'), icon: '&#128737;' },
         ]
       : [
+        { key: 'shtf', label: t('components.deckgl.layers.shtf'), icon: '&#127777;' },
         { key: 'hotspots', label: t('components.deckgl.layers.intelHotspots'), icon: '&#127919;' },
         { key: 'conflicts', label: t('components.deckgl.layers.conflictZones'), icon: '&#9876;' },
         { key: 'bases', label: t('components.deckgl.layers.militaryBases'), icon: '&#127963;' },
@@ -3064,6 +3074,7 @@ export class DeckGLMap {
   private updateLayers(): void {
     if (this.renderPaused || this.webglLost || !this.maplibreMap) return;
     const startTime = performance.now();
+    this.syncShtfLayer();
     if (this.deckOverlay) {
       this.deckOverlay.setProps({ layers: this.buildLayers() });
     }
@@ -3756,6 +3767,8 @@ export class DeckGLMap {
 
         if (!this.countryHoverSetup) this.setupCountryHover();
         this.updateCountryLayerPaint(getCurrentTheme());
+        this.shtfPaintDirty = true;
+        this.syncShtfLayer();
         if (this.highlightedCountryCode) this.highlightCountry(this.highlightedCountryCode);
         console.log('[DeckGLMap] Country boundaries loaded');
       })
@@ -3791,6 +3804,134 @@ export class DeckGLMap {
         map.getCanvas().style.cursor = '';
       }
     });
+  }
+
+  // ── SHTF gauge choropleth ──
+
+  /** Feed per-country temperatures (from /api/shtf/gauge) to the heat-map layer. */
+  public setShtfHeat(countries: ShtfCountry[]): void {
+    this.shtfCountries = countries;
+    this.shtfByIso3 = new Map(countries.map((c) => [c.iso3, c]));
+    this.shtfPaintDirty = true;
+    this.syncShtfLayer();
+  }
+
+  private ensureShtfLayers(): boolean {
+    const map = this.maplibreMap;
+    if (!map || !this.countryGeoJsonLoaded || !map.getSource('country-boundaries')) return false;
+    if (!map.hasImage('shtf-hatch')) {
+      const size = 8;
+      const data = new Uint8Array(size * size * 4);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if ((x + y) % size === 0 || (x + y) % size === 1) {
+            const i = (y * size + x) * 4;
+            data[i] = 20; data[i + 1] = 20; data[i + 2] = 20; data[i + 3] = 120;
+          }
+        }
+      }
+      map.addImage('shtf-hatch', { width: size, height: size, data });
+    }
+    const before = map.getLayer('country-interactive') ? 'country-interactive' : undefined;
+    if (!map.getLayer('shtf-heat-fill')) {
+      map.addLayer({
+        id: 'shtf-heat-fill',
+        type: 'fill',
+        source: 'country-boundaries',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#000000', 'fill-opacity': 0 },
+      }, before);
+      this.shtfPaintDirty = true;
+    }
+    if (!map.getLayer('shtf-heat-hatch')) {
+      map.addLayer({
+        id: 'shtf-heat-hatch',
+        type: 'fill',
+        source: 'country-boundaries',
+        layout: { visibility: 'none' },
+        paint: { 'fill-pattern': 'shtf-hatch', 'fill-opacity': 0.55 },
+        filter: ['in', ['get', 'ISO3166-1-Alpha-3'], ['literal', ['']]],
+      }, before);
+      this.shtfPaintDirty = true;
+    }
+    if (!this.shtfHoverSetup) this.setupShtfHover();
+    return true;
+  }
+
+  private syncShtfLayer(): void {
+    const map = this.maplibreMap;
+    if (!map) return;
+    const visible = Boolean(this.state.layers.shtf) && this.shtfCountries.length > 0;
+    if (!visible && !map.getLayer('shtf-heat-fill')) { this.updateShtfLegend(false); return; }
+    try {
+      if (!this.ensureShtfLayers()) return;
+      if (this.shtfPaintDirty) {
+        this.shtfPaintDirty = false;
+        const match: unknown[] = ['match', ['get', 'ISO3166-1-Alpha-3']];
+        for (const c of this.shtfCountries) match.push(c.iso3, shtfColor(c.t));
+        match.push('rgba(0,0,0,0)');
+        const known: unknown[] = ['match', ['get', 'ISO3166-1-Alpha-3']];
+        for (const c of this.shtfCountries) known.push(c.iso3, 1);
+        known.push(0);
+        const opacity = getCurrentTheme() === 'light' ? 0.55 : 0.45;
+        map.setPaintProperty('shtf-heat-fill', 'fill-color', match as unknown as maplibregl.ExpressionSpecification);
+        // Country polygons are coarse: fade the choropleth out when zoomed in to city/county scale.
+        map.setPaintProperty('shtf-heat-fill', 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 4, ['*', opacity, known], 6.5, 0] as unknown as maplibregl.ExpressionSpecification);
+        map.setPaintProperty('shtf-heat-hatch', 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 4, 0.55, 6.5, 0] as unknown as maplibregl.ExpressionSpecification);
+        const wide = this.shtfCountries.filter((c) => c.band > SHTF_WIDE_BAND).map((c) => c.iso3);
+        map.setFilter('shtf-heat-hatch', ['in', ['get', 'ISO3166-1-Alpha-3'], ['literal', wide.length ? wide : ['']]] as unknown as maplibregl.FilterSpecification);
+      }
+      const vis = visible ? 'visible' : 'none';
+      if (map.getLayoutProperty('shtf-heat-fill', 'visibility') !== vis) {
+        map.setLayoutProperty('shtf-heat-fill', 'visibility', vis);
+        map.setLayoutProperty('shtf-heat-hatch', 'visibility', vis);
+      }
+      this.updateShtfLegend(visible);
+      if (!visible && this.shtfTooltipEl) this.shtfTooltipEl.style.display = 'none';
+    } catch (err) {
+      console.warn('[DeckGLMap] SHTF layer sync failed:', err);
+    }
+  }
+
+  private updateShtfLegend(visible: boolean): void {
+    if (!visible) { if (this.shtfLegendEl) this.shtfLegendEl.style.display = 'none'; return; }
+    if (!this.shtfLegendEl) {
+      const el = document.createElement('div');
+      el.className = 'shtf-map-legend';
+      const stops = [0, 25, 40, 55, 70, 100].map((v) => shtfColor(v)).join(', ');
+      el.innerHTML = `
+        <div class="shtf-map-legend-title">SHTF temperature <span>(relative risk, not a prediction)</span></div>
+        <div class="shtf-map-legend-ramp" style="background: linear-gradient(90deg, ${stops})"></div>
+        <div class="shtf-map-legend-ticks"><span>0</span><span>25</span><span>40</span><span>55</span><span>70</span><span>100</span></div>
+        <div class="shtf-map-legend-note"><span class="shtf-map-legend-hatch"></span> hatched = uncertainty band wider than ±${SHTF_WIDE_BAND}</div>
+        <div class="shtf-map-legend-note">Fades out below country scale (zoom &gt; 6)</div>`;
+      this.container.appendChild(el);
+      this.shtfLegendEl = el;
+    }
+    this.shtfLegendEl.style.display = '';
+  }
+
+  private setupShtfHover(): void {
+    const map = this.maplibreMap;
+    if (!map || this.shtfHoverSetup) return;
+    this.shtfHoverSetup = true;
+    const tip = document.createElement('div');
+    tip.className = 'shtf-map-tooltip';
+    tip.style.display = 'none';
+    this.container.appendChild(tip);
+    this.shtfTooltipEl = tip;
+    map.on('mousemove', (e) => {
+      if (!this.state.layers.shtf || !map.getLayer('shtf-heat-fill')) { tip.style.display = 'none'; return; }
+      const f = map.queryRenderedFeatures(e.point, { layers: ['shtf-heat-fill'] })?.[0];
+      const iso3 = f?.properties?.['ISO3166-1-Alpha-3'] as string | undefined;
+      const c = iso3 ? this.shtfByIso3.get(iso3) : undefined;
+      if (!c) { tip.style.display = 'none'; return; }
+      tip.innerHTML = `<strong>${escapeHtml(c.name)}</strong> ${c.t.toFixed(0)} <span>± ${c.band.toFixed(0)}</span><br><span>${SHTF_LEVEL_LABEL[c.level]} · coverage ${Math.round(c.coverage * 100)}%</span>${c.drivers[0] ? `<br><span>Driver: ${escapeHtml(c.drivers[0])}</span>` : ''}`;
+      tip.style.left = `${e.point.x + 14}px`;
+      tip.style.top = `${e.point.y + 14}px`;
+      tip.style.display = '';
+    });
+    map.on('mouseout', () => { tip.style.display = 'none'; });
   }
 
   public highlightCountry(code: string): void {

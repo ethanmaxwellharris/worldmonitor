@@ -13,6 +13,7 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   'strategic-posture': { name: 'AI Strategic Posture', enabled: true, priority: 1 },
   cii: { name: 'Country Instability', enabled: true, priority: 1 },
+  'shtf-gauge': { name: 'SHTF Gauge', enabled: true, priority: 1 },
   'strategic-risk': { name: 'Strategic Risk Overview', enabled: true, priority: 1 },
   intel: { name: 'Intel Feed', enabled: true, priority: 1 },
   'gdelt-intel': { name: 'Live Intelligence', enabled: true, priority: 1 },
@@ -85,6 +86,7 @@ const FULL_MAP_LAYERS: MapLayers = {
   centralBanks: false,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: true,
 };
 
 const FULL_MOBILE_MAP_LAYERS: MapLayers = {
@@ -126,6 +128,7 @@ const FULL_MOBILE_MAP_LAYERS: MapLayers = {
   centralBanks: false,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: false,
 };
 
 // ============================================
@@ -207,6 +210,7 @@ const TECH_MAP_LAYERS: MapLayers = {
   centralBanks: false,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: false,
 };
 
 const TECH_MOBILE_MAP_LAYERS: MapLayers = {
@@ -248,6 +252,7 @@ const TECH_MOBILE_MAP_LAYERS: MapLayers = {
   centralBanks: false,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: false,
 };
 
 // ============================================
@@ -324,6 +329,7 @@ const FINANCE_MAP_LAYERS: MapLayers = {
   centralBanks: true,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: false,
 };
 
 const FINANCE_MOBILE_MAP_LAYERS: MapLayers = {
@@ -365,14 +371,74 @@ const FINANCE_MOBILE_MAP_LAYERS: MapLayers = {
   centralBanks: true,
   commodityHubs: false,
   gulfInvestments: false,
+  shtf: false,
 };
+
+// ============================================
+// LOCAL VARIANT (Hyper-local / home area)
+// ============================================
+// Home coordinates are server-side only (LOCAL_LAT / LOCAL_LON); see api/local/.
+const LOCAL_PANELS: Record<string, PanelConfig> = {
+  map: { name: 'Home Area Map', enabled: true, priority: 1 },
+  'local-overhead': { name: 'Overhead Now', enabled: true, priority: 1 },
+  'local-weather': { name: 'Weather & Alerts', enabled: true, priority: 1 },
+  'local-sky': { name: 'Sky Tonight', enabled: true, priority: 1 },
+  'local-news': { name: 'Local News', enabled: true, priority: 1 },
+  'local-quakes': { name: 'Quakes Nearby', enabled: true, priority: 1 },
+  'local-events': { name: 'Local Events', enabled: true, priority: 1 },
+  'local-scanners': { name: 'Scanners & Live Links', enabled: true, priority: 2 },
+  'shtf-gauge': { name: 'SHTF Gauge', enabled: true, priority: 1 },
+  monitors: { name: 'My Monitors', enabled: true, priority: 2 },
+};
+
+const LOCAL_MAP_LAYERS: MapLayers = {
+  ...FULL_MAP_LAYERS,
+  conflicts: false,
+  bases: false,
+  hotspots: false,
+  nuclear: false,
+  sanctions: false,
+  economic: false,
+  waterways: false,
+  outages: false,
+  weather: true,
+  natural: true,
+  flights: false,
+  military: false,
+  protests: false,
+  ais: false,
+  cables: false,
+  pipelines: false,
+  irradiators: false,
+  cyberThreats: false,
+  datacenters: false,
+  spaceports: false,
+  minerals: false,
+  fires: false,
+  ucdpEvents: false,
+  displacement: false,
+  climate: false,
+  startupHubs: false,
+  cloudRegions: false,
+  accelerators: false,
+  techHQs: false,
+  techEvents: false,
+  commodityHubs: false,
+  gulfInvestments: false,
+  stockExchanges: false,
+  financialCenters: false,
+  centralBanks: false,
+  shtf: true,
+};
+
+const LOCAL_MOBILE_MAP_LAYERS: MapLayers = { ...LOCAL_MAP_LAYERS };
 
 // ============================================
 // VARIANT-AWARE EXPORTS
 // ============================================
-export const DEFAULT_PANELS = SITE_VARIANT === 'tech' ? TECH_PANELS : SITE_VARIANT === 'finance' ? FINANCE_PANELS : FULL_PANELS;
-export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'tech' ? TECH_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MAP_LAYERS : FULL_MAP_LAYERS;
-export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'tech' ? TECH_MOBILE_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MOBILE_MAP_LAYERS : FULL_MOBILE_MAP_LAYERS;
+export const DEFAULT_PANELS = SITE_VARIANT === 'local' ? LOCAL_PANELS : SITE_VARIANT === 'tech' ? TECH_PANELS : SITE_VARIANT === 'finance' ? FINANCE_PANELS : FULL_PANELS;
+export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'local' ? LOCAL_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MAP_LAYERS : FULL_MAP_LAYERS;
+export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'local' ? LOCAL_MOBILE_MAP_LAYERS : SITE_VARIANT === 'tech' ? TECH_MOBILE_MAP_LAYERS : SITE_VARIANT === 'finance' ? FINANCE_MOBILE_MAP_LAYERS : FULL_MOBILE_MAP_LAYERS;
 
 // Monitor palette — fixed category colors persisted to localStorage (not theme-dependent)
 export const MONITOR_COLORS = [
